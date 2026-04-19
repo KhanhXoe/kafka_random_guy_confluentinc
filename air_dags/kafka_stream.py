@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from airflow import DAG
-from airflow.providers.standard.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator
 
 default_args = {
     'owner': 'khanhxoe',
@@ -31,27 +31,40 @@ def kafka_stream():
     import json
     from kafka import KafkaProducer
     import time
+    import logging
 
-    response = get_api_date()
-    formated_data = format_data(response)
+    logging.info('Starting kafka stream')
 
     producer = KafkaProducer(
-        bootstrap_servers=['localhost:9092'],
+        bootstrap_servers=['broker:29092'],
         max_block_ms=5000
     )
+    curr = time.time()
 
-    producer.send('user_created', value=json.dumps(formated_data).encode('utf-8'))
-    producer.flush()
+    while True:
+        if (time.time() - curr) > 60:
+            break
+        try:
+            response = get_api_date()
+            formated_data = format_data(response)
+            producer.send('user_created', value=json.dumps(formated_data).encode('utf-8'))
+            producer.flush()
+            time.sleep(1)
+            logging.info('Sent data to Kafka topic: user_created')
 
-# with DAG(
-#     'streaming_data',
-#     default_args=default_args,
-#     schedule_interval='@daily',
-#     catchup=False
-# ) as dag:
-#     streaming_task = PythonOperator(
-#         task_id='streaming_data_task',
-#         python_callable=kafka_stream
-#     )
+        except Exception as e:
+            logging.error(f'Error: {e}')
+            continue
+            
+    logging.info('Kafka stream ended')
 
-kafka_stream()
+with DAG(
+    'kafka_stream',
+    default_args=default_args,
+    schedule_interval='@daily',
+    catchup=False
+) as dag:
+    streaming_task = PythonOperator(
+        task_id='kafka_stream_task',
+        python_callable=kafka_stream
+    )
