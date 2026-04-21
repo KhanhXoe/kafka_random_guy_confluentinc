@@ -247,11 +247,39 @@ services:
       - HEAP_NEWSIZE=256M
       - CASSANDRA_USERNAME=${CASSANDRA_USERNAME}
       - CASSANDRA_PASSWORD=${CASSANDRA_PASSWORD}
-
     volumes:
-      - ./:/home/khanh/workdir/DE/data_engineering_kafka_streaming
+      - cassandra_data:/var/lib/cassandra
+    networks:
+      - confluent
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -u $$CASSANDRA_USERNAME -p $$CASSANDRA_PASSWORD -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  cassandra-init:
+    image: cassandra:latest
+    container_name: cassandra-init
+    depends_on:
+      cassandra_db:
+        condition: service_healthy
+    volumes:
+      - ./cassandra_init.cql:/cassandra_init.cql
+    command: >
+      bash -c "
+        echo 'Waiting for Cassandra to be ready...' &&
+        cqlsh cassandra -u $$CASSANDRA_USERNAME -p $$CASSANDRA_PASSWORD -f /cassandra_init.cql &&
+        echo 'Cassandra schema initialized successfully!'
+      "
+    environment:
+      - CASSANDRA_USERNAME=${CASSANDRA_USERNAME}
+      - CASSANDRA_PASSWORD=${CASSANDRA_PASSWORD}
     networks:
       - confluent
 
 networks:
   confluent:
+
+volumes:
+  cassandra_data:
